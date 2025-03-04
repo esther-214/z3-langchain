@@ -1,0 +1,12 @@
+#userInput {
+    position: relative;
+    width: 200px;
+    height: 10px;
+    padding: 6px;
+    font-size: 16px;
+  }
+  
+  #submitButton {
+    padding: 6px;
+    font-size: 16px;
+  }
