@@ -1,8 +1,9 @@
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { solveSMT } from "../z3";
+//Different models: "gemini-2.0-glash-lite", "gemini-2.0-flash-thinking-exp", "gemini-2.0-flash"
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-1.5-pro",
+  model: "gemini-2.0-flash-thinking-exp",
   temperature: 0,
   maxRetries: 2,
   apiKey: import.meta.env.VITE_GOOGLE_API_KEY,
@@ -19,12 +20,6 @@ const fence_area_2 = {
   bottom: 20,
   top: 17,
 };
-const forest_area = {
-  left: 11,
-  right: 23,
-  bottom: 12,
-  top: 1,
-};
 const prompt = new PromptTemplate({
   inputVariables: ["command"],
   template: `
@@ -36,6 +31,7 @@ const prompt = new PromptTemplate({
     - Fence Area 1: left=${fence_area_1.left}, right=${fence_area_1.right}, top=${fence_area_1.top}, bottom=${fence_area_1.bottom}
     - Fence Area 2: left=${fence_area_2.left}, right=${fence_area_2.right}, top=${fence_area_2.top}, bottom=${fence_area_2.bottom}
   4. Ensure that (if requested) the tile or object is strictly inside the fence (i.e., not touching the edges).
+  5. This is for a tile map, so lower y is going down and higher y is going up. 
 
   Example input: "Put something in the left side of the fence"
 
@@ -43,20 +39,30 @@ const prompt = new PromptTemplate({
 
   User Command: "{command}"
 
-  Output only valid SMT-LIB constraints with no additional text or explanations.
+  Output only valid SMT-LIB constraints with no additional text or explanations and no SMT tags.
+  RETURN IN A SINGLE STRING WITH ONLY THE CONSTRAINTS.
   `,
 });
 async function generateConstraint(command) {
   const formattedPrompt = await prompt.format({ command });
-  const response = await llm.invoke(formattedPrompt);
-  console.log(response.content);
-  return response.content.toString();
+  var response = await llm.invoke(formattedPrompt);
+  var cleanedResponse = response.content.replace(/^```smt2\s*|```$/g, "");
+
+  console.log(cleanedResponse);
+
+  console.log(cleanedResponse);
+  return cleanedResponse.toString();
 }
 
 export async function solveConstraint(user_input) {
   try {
     const response = await generateConstraint(user_input);
-    const { xVal, yVal } = await solveSMT(response);
+    const ret = await solveSMT(response);
+    if (ret == null) {
+      console.log("Could not find solution");
+    } else {
+      return ret;
+    }
     return { xVal, yVal }; // Ensure you're returning the data
   } catch (error) {
     console.error("Error:", error.message);

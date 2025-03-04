@@ -20,6 +20,9 @@ export async function solveSMT(smtInput) {
     // Extract the values for x and y from the model
     let xVal = parseInt(model.eval(x).toString(), 10);
     let yVal = parseInt(model.eval(y).toString(), 10);
+    if (xVal == null || yVal == null) {
+      return null;
+    }
     return { xVal, yVal };
   }
 }
