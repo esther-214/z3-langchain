@@ -1,9 +1,9 @@
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { solveSMT } from "../z3";
-//Different models: "gemini-2.0-glash-lite", "gemini-2.0-flash-thinking-exp", "gemini-2.0-flash"
+//Different models: "gemini-2.0-flash-lite", "gemini-2.0-flash-thinking-exp", "gemini-2.0-flash"
 const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.0-flash-thinking-exp",
+  model: "gemini-2.0-flash-lite",
   temperature: 0,
   maxRetries: 2,
   apiKey: import.meta.env.VITE_GOOGLE_API_KEY,
@@ -20,6 +20,54 @@ const fence_area_2 = {
   bottom: 20,
   top: 17,
 };
+const forest = {
+  left: 10,
+  right: 23,
+  bottom: 12,
+  top: 0,
+};
+const house_1 = {
+  left: 3,
+  right: 8,
+  bottom: 4,
+  top: 2,
+};
+const house_2 = {
+  left: 14,
+  right: 20,
+  bottom: 4,
+  top: 2,
+};
+const house_3 = {
+  left: 27,
+  right: 32,
+  bottom: 20,
+  top: 17,
+};
+const promptForIndex = new PromptTemplate({
+  inputVariables: ["command"],
+  template: `
+  You are an expert in interpreting user commands for a tile map and returning an index ID of the item being referenced.
+  Your task is to identify the index ID of the item described in the user command and return that index ID along with a brief description if provided.
+  Here is the list of index IDs and their associated item:
+  - Wheelbarrow: 58
+  - Mushroom: 30
+  - Beehive: 95
+  - Bomb: 106
+  Additional instruction:
+  - If the user specifies putting a specific item in the list provided, return the index ID of that item as a single integer.
+  - If the user does not specify an item, randomize this item from the list.
+  Example input: "Put a wheelbarros in the left side of the fence"
+  Expected output: "57"
+
+  User Command: "{command}"
+
+  Output only the index ID, without additional text or explanations.
+  RETURN ONLY THE INDEX ID AS A SINGLE STRING.
+  PLAINTEXT ONLY
+  NO MARKDOWN.
+  `,
+});
 const prompt = new PromptTemplate({
   inputVariables: ["command"],
   template: `
@@ -28,11 +76,16 @@ const prompt = new PromptTemplate({
   1. Declare variables 'x' and 'y' as integers.
   2. Create an '(assert ...)' statement based on the command.
   3. Use the following area definitions for reference each side of the fence is where the fence ends so there is a fence tile piece on it:
-    - Fence Area 1: left=${fence_area_1.left}, right=${fence_area_1.right}, top=${fence_area_1.top}, bottom=${fence_area_1.bottom}
-    - Fence Area 2: left=${fence_area_2.left}, right=${fence_area_2.right}, top=${fence_area_2.top}, bottom=${fence_area_2.bottom}
+    - Fence 1 Area: left_x=${fence_area_1.left}, right_x=${fence_area_1.right}, top_y=${fence_area_1.top}, bottom_y=${fence_area_1.bottom}
+    - Fence 2 Area: left_x=${fence_area_2.left}, right_x=${fence_area_2.right}, top_y=${fence_area_2.top}, bottom_y=${fence_area_2.bottom}
+    - Forest Area: left_x=${forest.left}, right_x=${forest.right}, top_y=${forest.top}, bottom_y=${forest.bottom}
+    - House 1 Area: left_x=${house_1.left}, right_x=${house_1.right}, top_y=${house_1.top}, bottom_y=${house_1.bottom}
+    - House 2 Area: left_x=${house_2.left}, right_x=${house_2.right}, top_y=${house_2.top}, bottom_y=${house_2.bottom}
+    - House 3 Area: left_x=${house_3.left}, right_x=${house_3.right}, top_y=${house_3.top}, bottom_y=${house_3.bottom}
   4. Ensure that (if requested) the tile or object is strictly inside the fence (i.e., not touching the edges).
   5. This is for a tile map, so lower y is going down and higher y is going up. 
 
+  You should first find the appropriate area definitions that will assist you with finding the SMT constraint.
   Example input: "Put something in the left side of the fence"
 
   Convert the user command below into the proper SMT-LIB constraint:
@@ -40,30 +93,40 @@ const prompt = new PromptTemplate({
   User Command: "{command}"
 
   Output only valid SMT-LIB constraints with no additional text or explanations and no SMT tags.
-  RETURN IN A SINGLE STRING WITH ONLY THE CONSTRAINTS.
+  RETURN IN A SINGLE STRING WITH ONLY THE CONSTRAINTS
+  PLAINTEXT ONLY
+  NO MARKDOWN.
   `,
 });
 async function generateConstraint(command) {
-  const formattedPrompt = await prompt.format({ command });
-  var response = await llm.invoke(formattedPrompt);
-  var cleanedResponse = response.content.replace(/^```smt2\s*|```$/g, "");
+  const formattedConstraintPrompt = await prompt.format({ command });
 
-  console.log(cleanedResponse);
+  // Format the command for the index ID retrieval prompt
+  const formattedIndexPrompt = await promptForIndex.format({ command });
 
-  console.log(cleanedResponse);
-  return cleanedResponse.toString();
+  // Generate the SMT constraint response
+  var constraintResponse = await llm.invoke(formattedConstraintPrompt);
+  var cleanedConstraintResponse = constraintResponse.content.replace(/```(?:smt|smt2)?\s*|\s*```/g, "");
+
+  var indexResponse = await llm.invoke(formattedIndexPrompt);
+  var cleanedIndexResponse = indexResponse.content.trim();
+  console.log("SMT Constraint:");
+  console.log(cleanedConstraintResponse);
+
+  console.log("Item Index ID:");
+  console.log(cleanedIndexResponse);
+
+  return {
+    constraint: cleanedConstraintResponse.toString(),
+    indexId: cleanedIndexResponse.toString(),
+  };
 }
 
 export async function solveConstraint(user_input) {
   try {
-    const response = await generateConstraint(user_input);
-    const ret = await solveSMT(response);
-    if (ret == null) {
-      console.log("Could not find solution");
-    } else {
-      return ret;
-    }
-    return { xVal, yVal }; // Ensure you're returning the data
+    const { constraint, indexId } = await generateConstraint(user_input);
+    const values = await solveSMT(constraint);
+    return { values, indexId };
   } catch (error) {
     console.error("Error:", error.message);
   }
@@ -110,8 +173,7 @@ export class Pathfinder extends Phaser.Scene {
       return;
     }
 
-    const tile_id = 58; // Example tile ID, you can change it based on your need
-    await this.placeTileFromSolver(user_input, tile_id); // Call placeTileFromSolver when the submit button is clicked
+    await this.placeTileFromSolver(user_input);
   }
 
   update() {
@@ -133,11 +195,11 @@ export class Pathfinder extends Phaser.Scene {
     document.getElementById("userInput").addEventListener("blur", () => {});
   }
 
-  async placeTileFromSolver(textInput, tile_id) {
+  async placeTileFromSolver(textInput) {
     try {
-      const { xVal, yVal } = await solveConstraint(textInput);
-      if (xVal != null && yVal != null) {
-        this.put(tile_id, xVal, yVal);
+      const { values, indexId } = await solveConstraint(textInput);
+      if (values.length != 0) {
+        this.put(indexId, values);
       } else {
         console.log("No valid tile placement found.");
       }
@@ -145,10 +207,16 @@ export class Pathfinder extends Phaser.Scene {
       console.error("Error placing tile:", error.message);
     }
   }
-
-  put(tile_id, xVal, yVal) {
+  put(tile_id, values) {
+    if (values.length == 0) {
+      console.log("no more solutions");
+      return;
+    }
+    let random = Phaser.Math.Between(0, values.length - 1);
+    var tile = values.splice(random, 1)[0];
     const layer = this.map.getLayer("Decor").tilemapLayer;
-    tiles_put.push({ xVal, yVal });
+    const { xVal, yVal } = tile;
+    tiles_put.push(tile);
     return layer.putTileAt(tile_id, xVal, yVal);
   }
 

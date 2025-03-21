@@ -1,12 +1,12 @@
 {
   "name": "z3-langchain",
   "version": "1.0.0",
-  "main": "gemini.js",
+  "main": "main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node gemini.js"
+    "map": "node map_facts.js"
   },
   "dependencies": {
     "@langchain/core": "^0.3.42",
@@ -15,6 +15,7 @@
     "dotenv": "^16.4.7",
     "langchain": "^0.3.19",
     "openai": "^4.85.4",
+    "sqlite3": "^5.1.7",
     "z3-solver": "^4.13.3"
   },
   "type": "module",

@@ -12,17 +12,30 @@ export async function solveSMT(smtInput) {
   // Check satisfiability
   const result = await solver.check();
   console.log("Satisfiability:", result);
-
+  let values = [];
   // If the result is sat (satisfiable), enter the loop
-  if (result === "sat") {
+  while ((await solver.check()) === "sat") {
     const model = solver.model();
 
-    // Extract the values for x and y from the model
-    let xVal = parseInt(model.eval(x).toString(), 10);
-    let yVal = parseInt(model.eval(y).toString(), 10);
-    if (xVal == null || yVal == null) {
-      return null;
+    let xEval = model.eval(x);
+    let yEval = model.eval(y);
+
+    if (!xEval || !yEval) {
+      throw new Error("Solver did not return valid values for x or y");
     }
-    return { xVal, yVal };
+
+    let xStr = xEval.toString();
+    let yStr = yEval.toString();
+
+    let xVal = parseInt(xStr);
+    let yVal = parseInt(yStr);
+
+    if (isNaN(xVal) || isNaN(yVal)) {
+      throw new Error(`Invalid value from solver: x='${xStr}', y='${yStr}'`);
+    }
+    values.push({ xVal, yVal });
+    solver.add(Or(x.neq(xVal), y.neq(yVal)));
   }
+  solver.reset();
+  return values;
 }
