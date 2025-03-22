@@ -72,31 +72,44 @@ const prompt = new PromptTemplate({
   inputVariables: ["command"],
   template: `
   You are an expert in converting user commands into Z3 SMT-LIB constraints.
-  Your task is to convert the following user command into a valid Z3 SMT constraint in SMT-LIB format:
-  1. Declare variables 'x' and 'y' as integers.
-  2. Create an '(assert ...)' statement based on the command.
-  3. Use the following area definitions for reference each side of the fence is where the fence ends so there is a fence tile piece on it:
-    - Fence 1 Area: left_x=${fence_area_1.left}, right_x=${fence_area_1.right}, top_y=${fence_area_1.top}, bottom_y=${fence_area_1.bottom}
-    - Fence 2 Area: left_x=${fence_area_2.left}, right_x=${fence_area_2.right}, top_y=${fence_area_2.top}, bottom_y=${fence_area_2.bottom}
-    - Forest Area: left_x=${forest.left}, right_x=${forest.right}, top_y=${forest.top}, bottom_y=${forest.bottom}
-    - House 1 Area: left_x=${house_1.left}, right_x=${house_1.right}, top_y=${house_1.top}, bottom_y=${house_1.bottom}
-    - House 2 Area: left_x=${house_2.left}, right_x=${house_2.right}, top_y=${house_2.top}, bottom_y=${house_2.bottom}
-    - House 3 Area: left_x=${house_3.left}, right_x=${house_3.right}, top_y=${house_3.top}, bottom_y=${house_3.bottom}
-  4. Ensure that (if requested) the tile or object is strictly inside the fence (i.e., not touching the edges).
-  5. This is for a tile map, so lower y is going down and higher y is going up. 
 
-  You should first find the appropriate area definitions that will assist you with finding the SMT constraint.
-  Example input: "Put something in the left side of the fence"
+Your task is to convert the following user command into a valid Z3 SMT constraint in SMT-LIB format:
 
-  Convert the user command below into the proper SMT-LIB constraint:
+1. **Declare variables** 'x' and 'y' as integers.
+2. **Identify relevant area definitions** to assist in constraint construction.
+   - Fence 1: left_x=${fence_area_1.left}, right_x=${fence_area_1.right}, top_y=${fence_area_1.top}, bottom_y=${fence_area_1.bottom}
+   - Fence 2: left_x=${fence_area_2.left}, right_x=${fence_area_2.right}, top_y=${fence_area_2.top}, bottom_y=${fence_area_2.bottom}
+   - Forest: left_x=${forest.left}, right_x=${forest.right}, top_y=${forest.top}, bottom_y=${forest.bottom}
+   - House 1: left_x=${house_1.left}, right_x=${house_1.right}, top_y=${house_1.top}, bottom_y=${house_1.bottom}
+   - House 2: left_x=${house_2.left}, right_x=${house_2.right}, top_y=${house_2.top}, bottom_y=${house_2.bottom}
+   - House 3: left_x=${house_3.left}, right_x=${house_3.right}, top_y=${house_3.top}, bottom_y=${house_3.bottom}
 
-  User Command: "{command}"
+3. **Apply spatial rules (Y-axis is inverted in tile maps):**
+   - A **lower y-value moves down**, a **higher y-value moves up**.
+   - "Right side of the fence" → x is **closer to right_x but inside**.
+   - "Top of the fence" → y is **closer to top_y but inside**.
+   - "Strictly inside" → No contact with **left_x, right_x, top_y, or bottom_y**.
 
-  Output only valid SMT-LIB constraints with no additional text or explanations and no SMT tags.
-  RETURN IN A SINGLE STRING WITH ONLY THE CONSTRAINTS
-  PLAINTEXT ONLY
-  NO MARKDOWN.
-  `,
+4. **Match commands to logical expressions:**
+   - "Inside the fence" → '(and (> x left_x) (< x right_x) (> y bottom_y) (< y top_y))'
+   - "Left side of the fence" → '(and (> x left_x) (< x (left_x + (right_x - left_x)/2)) (> y bottom_y) (< y top_y))'
+   - "Near the bottom of the fence" → '(and (> x left_x) (< x right_x) (> y bottom_y) (< y (bottom_y + (top_y - bottom_y)/2)))'
+   - "Outside the fence" → '(or (< x left_x) (> x right_x) (< y bottom_y) (> y top_y))'
+
+5. **Construct a valid SMT-LIB constraint using the above rules**.
+
+**Example Input:**  
+"Place a beehive in the lower right corner of fence 1. "
+
+**Example Output:**  
+"(declare-const x Int) (declare-const y Int) (assert (and (>= x 35) (<= x 37) (>= y 3) (<= y 5)))"
+
+Convert the user command below into the proper SMT-LIB constraint:
+
+User Command: "{command}"
+
+Output **only** the SMT-LIB constraints as a **single plaintext string** with **no markdown** and **no explanations**.
+`,
 });
 async function generateConstraint(command) {
   const formattedConstraintPrompt = await prompt.format({ command });
@@ -187,7 +200,6 @@ export class Pathfinder extends Phaser.Scene {
       if (event.key === "c") {
         console.log("c");
         this.clear();
-        this.map.render();
       }
     });
 
@@ -207,11 +219,23 @@ export class Pathfinder extends Phaser.Scene {
       console.error("Error placing tile:", error.message);
     }
   }
+  avoid(values) {
+    const layer = this.map.getLayer("Trees-n-Bushes").tilemapLayer;
+    const updatedValues = values.filter(({ xVal, yVal }) => {
+      const tile = layer.getTileAt(xVal, yVal);
+      if (tile) {
+        return false;
+      }
+      return true;
+    });
+    return updatedValues;
+  }
   put(tile_id, values) {
     if (values.length == 0) {
       console.log("no more solutions");
       return;
     }
+    values = this.avoid(values);
     let random = Phaser.Math.Between(0, values.length - 1);
     var tile = values.splice(random, 1)[0];
     const layer = this.map.getLayer("Decor").tilemapLayer;

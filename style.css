@@ -10,3 +10,17 @@
     padding: 6px;
     font-size: 16px;
   }
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto; /* Allows scrolling if the canvas overflows */
+}
+
+#game-container {
+    overflow: auto; /* Enables scrolling if needed */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
